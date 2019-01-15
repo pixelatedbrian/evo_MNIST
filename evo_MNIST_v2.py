@@ -28,7 +28,7 @@ from keras import backend as K
 ### Default model parameters before starting: ###
 #################################################
 
-run_number = 9
+run_number = 10
 
 parameter_file = "parameters_{:03d}.json".format(run_number)
 log_file = "genome_{:03d}.h5".format(run_number)
@@ -49,7 +49,7 @@ m_params["EPOCHS"] = 70           # [10 - 50]
 m_params["LEARNING_RATE"] = 0.01    # [1e1 - 1e-5]
 m_params["LR_DECAY"] = 1e-5        # [1e-2 - 1e-5]
 
-m_params["OPTIMIZER"] = Adam   # [Adadelta, Adam, RMSprop, SGD]
+m_params["OPTIMIZER"] = "adam"   # [Adadelta, Adam, RMSprop, SGD]
 
 # dropout
 # applies in the gab preceeding the label
@@ -74,120 +74,139 @@ m_params["ACT_FC_D"] = "relu"     # [elu, relu, selu, sigmoid, hard_sigmoid, lin
 m_params["ACT_FC_E"] = "relu"     # [elu, relu, selu, sigmoid, hard_sigmoid, linear]
 
 
-def darwin(params, generations=500):
-    log = []
-
+def mutagen(params, previous_mutation):
+    '''
+    takes in a parameters and mutates something
+    '''
     # in the future decide which 'gene' to MUTATE before the for loop.
     mutation_keys = ["EPOCHS", "NEURONS", "NEURON_ACTIVATION", "LEARNING_RATE", "DROPOUT", "LR_DECAY", "BATCH_SIZE"]
     # mutation_keys = ["NEURON_ACTIVATION"]
+    
+    mutation_type = previous_mutation
+    
+    while mutation_type == previous_mutation:
+        mutation_type = np.random.choice(mutation_keys)
+
+    ############################
+    ### if mutating epochs:  ###
+    ############################
+    if mutation_type == "EPOCHS":
+        # get current epoch
+        mutations = []
+
+        # now make PERMUT_OFF permutations:
+        while len(mutations) < PERMUT_OFF:
+            temp_e = np.random.randint(-10, 10)
+            temp_e += params[mutation_type]
+
+            if 2 <= temp_e <= 150:
+                if temp_e not in mutations:
+                    mutations.append(temp_e)
+
+    elif mutation_type == "BATCH_SIZE":
+        mutations = [params[mutation_type]]
+
+        while len(mutations) < PERMUT_OFF:
+            temp = int(np.random.choice([256, 512, 1024, 2048, 4096, 8192, 16386]))
+
+            if temp not in mutations:
+                mutations.append(temp)
+
+    elif mutation_type == "LR_DECAY":
+        mutations = []
+
+        while len(mutations) < PERMUT_OFF:
+            temp = np.random.normal(scale=1.0, loc=0.0)
+            #     print(temp)
+
+            temp = np.log10(params[mutation_type]) + temp
+
+            if -6.0 <= temp:
+                if temp >= 1.0:
+                    temp = 1.0
+            else:
+                temp = -6.0
+
+            lr_decay = 10**temp
+
+            mutations.append(lr_decay)
+
+    elif mutation_type == "NEURONS":
+        mutation_type = np.random.choice(["NODES_FC_A", "NODES_FC_B", "NODES_FC_C", "NODES_FC_D", "NODES_FC_E"])
+
+        mutations = []
+
+        while len(mutations) < PERMUT_OFF:
+            temp = np.random.randint(-25, 25)
+            temp += params[mutation_type]  # difference off the original value
+
+            if 2 <= temp <= 200:
+                if temp not in mutations:
+                    mutations.append(temp)
+
+    elif mutation_type == "NEURON_ACTIVATION":
+        mutation_type = np.random.choice(["ACT_FC_A", "ACT_FC_B", "ACT_FC_C", "ACT_FC_D", "ACT_FC_E"])
+
+        mutations = []
+
+        while len(mutations) < PERMUT_OFF:
+            temp = np.random.choice(["elu", "relu", "selu", "sigmoid", "hard_sigmoid", "linear", "tanh"])
+
+            if temp not in mutations:
+                mutations.append(temp)
+
+    elif mutation_type == "LEARNING_RATE":
+
+        mutations = []
+
+        while len(mutations) < PERMUT_OFF:
+            temp = np.random.normal(scale=0.1, loc=-0.1)
+            #     print(temp)
+
+            temp = np.log10(params[mutation_type]) + temp
+
+            if -5.0 <= temp:
+                if temp >= 1.0:
+                    temp = 1.0
+            else:
+                temp = -5.0
+
+            lr = 10**temp
+
+            mutations.append(lr)
+
+    elif mutation_type == "DROPOUT":
+        mutation_type = np.random.choice(["DO_A", "DO_B", "DO_C", "DO_D", "DO_E", "DO_F"])
+
+        mutations = []
+
+        while len(mutations) < PERMUT_OFF:
+            temp = np.random.normal(scale=0.2, loc=0.0)
+
+            temp += params[mutation_type] 
+
+            if 0.0 <= temp <= 0.9999:
+                mutations.append(temp)
+    
+    return mutation_type, mutations
+    
+    
+def darwin(params, generations=500):
+    log = []
 
     previous_mutation = None
+    previous_generation_performance = 0   # since we're skipping extra processing of previous epoch settings
+                                          # we have to keep in mind what that previous value was.  Otherwise
+                                          # we will simply pick the best 'new' mutation, which may be worse
+                                          # than simply reusing the old mutation
     for generation in range(generations):
 
-        mutation_type = np.random.choice(mutation_keys)
+        mutation_type, mutations = mutagen(params, previous_mutation)
         
         print("Generation {:}: {:}".format(generation + 1, mutation_type))
-
-        ############################
-        ### if mutating epochs:  ###
-        ############################
-        if mutation_type == "EPOCHS":
-            # get current epoch
-            mutations = [params[mutation_type]]
-
-            # now make PERMUT_OFF permutations:
-            while len(mutations) < PERMUT_OFF:
-                temp_e = np.random.randint(-10, 10)
-                temp_e += mutations[0]
-
-                if 2 <= temp_e <= 150:
-                    if temp_e not in mutations:
-                        mutations.append(temp_e)
-
-        elif mutation_type == "BATCH_SIZE":
-            mutations = [params[mutation_type]]
-            
-            while len(mutations) < PERMUT_OFF:
-                temp = np.random.choice([256, 512, 1024, 2048, 4096, 8192, 16386])
-
-                if temp not in mutations:
-                    mutations.append(temp)
-                        
-        elif mutation_type == "LR_DECAY":
-            mutations = [params[mutation_type]]
-
-            while len(mutations) < PERMUT_OFF:
-                temp = np.random.normal(scale=1.0, loc=0.0)
-                #     print(temp)
-
-                temp = np.log10(mutations[0]) + temp
-
-                if -6.0 <= temp:
-                    if temp >= 1.0:
-                        temp = 1.0
-                else:
-                    temp = -6.0
-
-                lr_decay = 10**temp
-
-                mutations.append(lr_decay)
-                
-        elif mutation_type == "NEURONS":
-            mutation_type = np.random.choice(["NODES_FC_A", "NODES_FC_B", "NODES_FC_C", "NODES_FC_D", "NODES_FC_E"])
-
-            mutations = [params[mutation_type]]
-
-            while len(mutations) < PERMUT_OFF:
-                temp = np.random.randint(-25, 25)
-                temp += mutations[0]  # difference off the original value
-
-                if 2 <= temp <= 200:
-                    if temp not in mutations:
-                        mutations.append(temp)
-
-        elif mutation_type == "NEURON_ACTIVATION":
-            mutation_type = np.random.choice(["ACT_FC_A", "ACT_FC_B", "ACT_FC_C", "ACT_FC_D", "ACT_FC_E"])
-            
-            mutations = [params[mutation_type]]
-
-            while len(mutations) < PERMUT_OFF:
-                temp = np.random.choice(["elu", "relu", "selu", "sigmoid", "hard_sigmoid", "linear", "tanh"])
-
-                if temp not in mutations:
-                    mutations.append(temp)
-
-        elif mutation_type == "LEARNING_RATE":
-            
-            mutations = [params[mutation_type]]
-
-            while len(mutations) < PERMUT_OFF:
-                temp = np.random.normal(scale=0.1, loc=-0.1)
-                #     print(temp)
-
-                temp = np.log10(mutations[0]) + temp
-
-                if -5.0 <= temp:
-                    if temp >= 1.0:
-                        temp = 1.0
-                else:
-                    temp = -5.0
-
-                lr = 10**temp
-
-                mutations.append(lr)
-
-        elif mutation_type == "DROPOUT":
-            mutation_type = np.random.choice(["DO_A", "DO_B", "DO_C", "DO_D", "DO_E", "DO_F"])
-          
-            mutations = [params[mutation_type]]
-
-            while len(mutations) < PERMUT_OFF:
-                temp = np.random.normal(scale=0.2, loc=0.0)
-
-                temp += mutations[0]
-
-                if 0.0 <= temp <= 0.9999:
-                    mutations.append(temp)
+        
+        # update so next time we'll know what we mutated on this time
+        previous_mutation = mutation_type
 
         # keep track of fitness scores so we can see which is best!
         fitness_tracker = []
@@ -195,11 +214,12 @@ def darwin(params, generations=500):
         time_tracker = []
         best_acc_tracker = []
         
+        # depricated can remove next version
         # try to prevent immediate repetition
-        if mutation_type == previous_mutation:
-            print("Attempting to prevent mutation_type repeat.\n\n")
-            generations += 1
-            continue
+#         if mutation_type == previous_mutation:
+#             print("Attempting to prevent mutation_type repeat.\n\n")
+#             generations += 1
+#             continue
 
         for mutation in mutations:
             print("Mutation Type: {:}  Mutation Value: {:}".format(mutation_type, str(mutation)))
@@ -212,21 +232,33 @@ def darwin(params, generations=500):
             best_acc_tracker.append(best_acc)
 
         best_generation = np.argmax(fitness_tracker)
+        best_fitness = np.max(fitness_tracker)
         print("\nThe best mutations was", best_generation,
-              "with a score of", np.max(fitness_tracker),
+              "with a score of", best_fitness,
               "which corresponds to a value of ", mutations[best_generation], mutation_type)
         print("\n")
-
-        # actually integrate the improvement
-        params[mutation_type] = mutations[best_generation]
-
-        log.append([np.max(fitness_tracker),
-                    mutation_type,
-                    best_acc_tracker[best_generation],
-                    time_tracker[best_generation]])
+        
+        # if the new generation is an improvement THEN integrate the mutation into the line
+        if best_fitness > previous_generation_performance:
+            # actually integrate the improvement
+            params[mutation_type] = mutations[best_generation]
+            
+            # set the best to the new version
+            previous_generation_performance = best_fitness
+            
+            log.append([best_fitness,
+                        mutation_type,
+                        best_acc_tracker[best_generation],
+                        time_tracker[best_generation]])
+            
+        else:
+            log.append([0.0,
+                        mutation_type,
+                        0.0,
+                        time_tracker[best_generation]])
 
         burn_log(log, log_file)
-        
+
         # keep track of previous mutation to try to prevent it doing the same thing two, or more, times in a row
         previous_mutation = mutation_type
 
@@ -236,7 +268,14 @@ def darwin(params, generations=500):
         
         print("\n\n")
     
+    params["x_test"] = ""
     params["x_train"] = ""
+    params["y_test"] = ""
+    params["y_train"] = ""
+    
+    
+    print("\n\n\n\n", repr(params))
+    
     # store the resulting parameter file
     with open(parameter_file, "w") as outfile:
         json.dump(params, outfile, indent=4, separators=(',', ':'))
@@ -347,7 +386,21 @@ def run_model(params):
     # actually define the model:
     model = Model(inputs=input_img, outputs=output)
 
-    optimizer = params['OPTIMIZER'](lr=LEARNING_RATE, decay=LR_DECAY)
+    SGD, RMSprop, Adadelta
+    
+    if params["OPTIMIZER"] == "adam":
+        optimizer = Adam(lr=LEARNING_RATE, decay=LR_DECAY)
+        
+    elif params["OPTIMIZER"] == "rms":
+        optimizer = RMSprop(lr=LEARNING_RATE, decay=LR_DECAY)
+        
+    elif params["OPTIMIZER"] == "sgd":
+        optimizer = SGD(lr=LEARNING_RATE, decay=LR_DECAY)
+        
+    elif params["OPTIMIZER"] == "adadelta":
+        optimizer = Adadelta(lr=LEARNING_RATE, decay=LR_DECAY)
+        
+#     optimizer = params['OPTIMIZER'](lr=LEARNING_RATE, decay=LR_DECAY)
 
     model.compile(loss=keras.losses.categorical_crossentropy,
                   optimizer=optimizer,
@@ -395,4 +448,4 @@ if __name__ == "__main__":
     m_params["y_train"] = y_train
     m_params["y_test"] = y_test
     
-    darwin(m_params, 150)
+    darwin(m_params, 500)
